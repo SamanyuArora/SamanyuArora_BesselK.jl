@@ -37,7 +37,21 @@ function _besselkxv(v, x, maxit, tol, order)
   end
 end
 
-adbesselk(v::Float64, x::Float64) = Bessels.besselk(v, x)
+@inline function _use_centered_small_x(v::Float64, x::Float64)
+  av = abs(v)
+
+  isfinite(av) &&
+    isfinite(x) &&
+    0.0 < x <= _BESSELK_SMALL_X_CENTERED_MAX_X &&
+    av <= _BESSELK_SMALL_X_CENTERED_MAX_ORDER &&
+    av != Float64(unsafe_trunc(Int, av))
+end
+
+@inline function adbesselk(v::Float64, x::Float64)
+  _use_centered_small_x(v, x) ?
+    _besselk_small_centered(v, x) :
+    Bessels.besselk(v, x)
+end
 adbesselk(v::Float32, x::Float32) = Bessels.besselk(v, x)
 adbesselk(v, x) = _besselk(v, x, 100, 1e-12, 6)
 
