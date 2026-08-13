@@ -28,15 +28,15 @@ function _besselkxv(v, x, maxit, tol, order)
     return _besselk_temme(v, x, maxit, tol, true)
   elseif abs(x) <= 20.0
     return _besselk_intermediate(v, x, true)
+  elseif abs(v) > 1.5
+    return _besselk_asv(v, x, Val(8), Val(true))
   elseif abs(x) < 30.0
     return _besselk_asv(v, x, Val(8), Val(true))
-  elseif abs(v) > 1.5
-    return _besselk_asv(v, x, Val(6), Val(true))
   else
     return _besselk_as(v, x, order)*exp(v*log(x)) # temporary, until float pows in 1.9.
   end
 end
 
 adbesselk(v, x) = _besselk(v, x, 100, 1e-12, 6)
-
 adbesselkxv(v, x) = is_primal_zero(x) ? _gamma(v)*2^(v-1) : _besselkxv(v, x, 100, 1e-12, 6)
+
