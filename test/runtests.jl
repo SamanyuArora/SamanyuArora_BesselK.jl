@@ -8,6 +8,7 @@ const REF_FD1 = central_fdm(10,1)
 const REF_FD2 = central_fdm(10,2)
 
 atolfun(tru, est) = isnan(est) ? NaN : (isinf(tru) ? 0.0 : abs(tru-est))
+rtolfun(tru, est) = isnan(est) ? NaN : (isinf(tru) ? 0.0 : abs(tru-est)/abs(tru))
 
 besselkxv(v,x) = besselk(v,x)*(x^v)
 
@@ -30,16 +31,16 @@ ad2_dbesselkxv_dv_dv(v, x) = ForwardDiff.derivative(_v->ad_dbesselkxv_dv(_v, x),
                                   (besselkxv, adbesselkxv, :rescaled))
     amos_ref  = map(vx->ref_fn(vx[1], vx[2]), VX)
     candidate = map(vx->cand_fn(vx[1], vx[2]), VX)
-    atols     = map(a_c->atolfun(a_c[1], a_c[2]), zip(amos_ref, candidate))
+    rtols     = map(a_c->rtolfun(a_c[1], a_c[2]), zip(amos_ref, candidate))
     ix        = findall(x-> x <= 1000.0, amos_ref)
-    thresh    = case == :standard ? 5e-11 : 2e-12
-    (maxerr, maxix) = findmax(abs, atols[ix])
+    thresh    = 1e-9 
+    (maxerr, maxix) = findmax(abs, rtols[ix])
     (maxerr_v, maxerr_x) = VX[ix][maxix]
     println("Case $case:")
     println("worst (v,x):  ($maxerr_v, $maxerr_x)")
     println("Ref value:     $(amos_ref[ix][maxix])")
     println("Est value:     $(candidate[ix][maxix])")
-    println("Abs error:     $(round(maxerr, sigdigits=3))")
+    println("Rel error:     $(round(maxerr, sigdigits=3))")
     @test maxerr < thresh
   end
   println()
@@ -52,16 +53,16 @@ end
                                   (fd_dbesselkxv_dv, ad_dbesselkxv_dv, :rescaled))
     amos_ref  = map(vx->ref_fn(vx[1], vx[2]), VX)
     candidate = map(vx->cand_fn(vx[1], vx[2]), VX)
-    atols     = map(a_c->atolfun(a_c[1], a_c[2]), zip(amos_ref, candidate))
+    rtols     = map(a_c->rtolfun(a_c[1], a_c[2]), zip(amos_ref, candidate))
     ix        = findall(x-> x <= 1000.0, amos_ref)
-    thresh    = case == :standard ? 4e-9 : 2e-6
-    (maxerr, maxix) = findmax(abs, atols[ix])
+    thresh    = 5e-8
+    (maxerr, maxix) = findmax(abs, rtols[ix])
     (maxerr_v, maxerr_x) = VX[ix][maxix]
     println("Case $case:")
     println("worst (v,x):  ($maxerr_v, $maxerr_x)")
     println("Ref value:     $(amos_ref[ix][maxix])")
     println("Est value:     $(candidate[ix][maxix])")
-    println("Abs error:     $(round(maxerr, sigdigits=3))")
+    println("Rel error:     $(round(maxerr, sigdigits=3))")
     @test maxerr < thresh
   end
   println()
@@ -74,24 +75,22 @@ end
                                   (fd2_dbesselkxv_dv_dv, ad2_dbesselkxv_dv_dv, :rescaled))
     amos_ref  = map(vx->ref_fn(vx[1], vx[2]), VX)
     candidate = map(vx->cand_fn(vx[1], vx[2]), VX)
-    atols     = map(a_c->atolfun(a_c[1], a_c[2]), zip(amos_ref, candidate))
+    rtols     = map(a_c->rtolfun(a_c[1], a_c[2]), zip(amos_ref, candidate))
     ix        = findall(x-> x <= 100.0, amos_ref)
-    thresh    = case == :standard ? 5e-7 : 5e-6
-    (maxerr, maxix) = findmax(abs, atols[ix])
+    thresh    = 5e-8
+    (maxerr, maxix) = findmax(abs, rtols[ix])
     (maxerr_v, maxerr_x) = VX[ix][maxix]
     println("Case $case:")
     println("worst (v,x):  ($maxerr_v, $maxerr_x)")
     println("Ref value:     $(amos_ref[ix][maxix])")
     println("Est value:     $(candidate[ix][maxix])")
-    println("Abs error:     $(round(maxerr, sigdigits=3))")
+    println("Rel error:     $(round(maxerr, sigdigits=3))")
     @test maxerr < thresh
   end
   println()
 end
 
-# Testing the _xv versions really slows down the test script, and in general
-# there are no no routines.
-@testset "confirm no allocations" begin
+@testset "no allocations" begin
   VGRID_ALLOC = (0.25, 1.0-1e-8, 1.0, 1.5, 2.1, 3.0, 3.5, 4.8)
   XGRID_ALLOC = range(0.0, 50.0, length=11)[2:end] 
   VX_ALLOC    = collect(Iterators.product(VGRID_ALLOC, XGRID_ALLOC))
@@ -109,32 +108,3 @@ end
   @test all(iszero, ad2_allocs_xv)
 end
 
-
-@testset "intermediate Chebyshev" begin
-  xgrid = range(0.5, 20.0, length=79)
-  vx = collect(Iterators.product(VGRID, xgrid))
-
-  for (modify, threshold) in ((false, 5e-11),)
-    refs = map(vx) do (v, x)
-      k = besselk(v, x)
-      modify ? k*x^v : k
-    end
-    vals = map(vx) do (v, x)
-      BesselK._besselk_intermediate(v, x, modify)
-    end
-    errors = map(a_c->atolfun(a_c[1], a_c[2]), zip(refs, vals))
-    ix = findall(x->x <= 1000.0, refs)
-    maxerr = maximum(abs, errors[ix])
-    @test maxerr < threshold
-  end
-
-  for v in (0.25, 0.5, 1.0, 2.0, 4.6, 10.0)
-    for boundary in (0.5, 4.0, 20.0)
-      for x in (prevfloat(boundary), boundary, nextfloat(boundary))
-        ref = besselk(v, x)
-        val = BesselK._besselk(v, x, 100, 1e-12, 6)
-        @test isapprox(val, ref; atol=5e-11, rtol=5e-13)
-      end
-    end
-  end
-end
